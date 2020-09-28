@@ -1,0 +1,5 @@
+/build/
+/.vs/
+*.json
+mask.ppm
+mask.h

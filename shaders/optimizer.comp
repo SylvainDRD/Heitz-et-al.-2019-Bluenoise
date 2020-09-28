@@ -1,0 +1,86 @@
+#version 430 core
+
+// Actual values set at compile time
+#define MASK_SIZE 1337
+#define PIXEL_COUNT MASK_SIZE * MASK_SIZE
+
+
+layout (local_size_x = 1, local_size_y = 1) in;
+
+readonly layout (r32ui, binding=0) uniform uimage2D inIndices;
+writeonly layout (r32ui, binding=1) uniform uimage2D outIndices;
+//readonly layout (r32f, binding=2) uniform image2D distanceMatrix;
+
+uniform uint xorKey;
+
+
+layout (std430, binding=0) buffer SwapData {
+    uint permutations[];
+};
+
+layout (std430, binding=1) buffer DistanceData {
+    float distanceMatrix[][PIXEL_COUNT];
+};
+
+
+float circularSquaredDistance(ivec2 p, ivec2 q) {
+    ivec2 tmp = abs(p - q);
+    vec2 v =  min(tmp, MASK_SIZE - tmp);
+
+    return dot(v, v);
+}
+
+ivec2 to2DIndex(uint index) {
+    return ivec2(index % MASK_SIZE, index / MASK_SIZE);
+}
+
+float energyFunction(ivec2 center, uint candidateIndex, ivec2 p) {
+    const float sigma_i2 = 2.1f * 2.1f;
+
+    float spatialDistance = - circularSquaredDistance(center, p) / sigma_i2;
+    float sampleDistance = - distanceMatrix[candidateIndex][imageLoad(inIndices, p).r];
+
+    return exp(spatialDistance + sampleDistance);
+}
+
+// Compute the energy around center with value as the center value
+float totalEnergy(ivec2 center, uint candidateIndex) {
+    const int radius = 5;
+
+    float e = 0.f;
+    for(int i = center.x - radius + 1; i < center.x + radius; ++i) { 
+        for(int j = center.y - radius + 1; j < center.y + radius; ++j) {
+            if(i != center.x || j != center.y) {
+                // Compute the position modulo the size of the mask
+                ivec2 position = (ivec2(i, j) + MASK_SIZE) % MASK_SIZE;
+
+                e += energyFunction(center, candidateIndex, position);
+            }
+        }
+    }
+
+    return e;
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x * 2;
+
+    // Compute the 2D positions from the 1D vectorized indices
+    ivec2 position = to2DIndex(permutations[index] ^ xorKey);
+    ivec2 candidatePosition = to2DIndex(permutations[index + 1] ^ xorKey);
+
+    // Pre fetch the candidate pixel index to avoid extra fetches 
+    uint centerIndex = imageLoad(inIndices, position).x;
+    uint candidateIndex = imageLoad(inIndices, candidatePosition).x;
+
+    float oldEnergy = totalEnergy(position, centerIndex) + totalEnergy(candidatePosition, candidateIndex);
+    float newEnergy = totalEnergy(position, candidateIndex) + totalEnergy(candidatePosition, centerIndex);
+
+    if(newEnergy < oldEnergy) {
+        uvec4 v1 = imageLoad(inIndices, position);
+        uvec4 v2 = imageLoad(inIndices, candidatePosition);
+
+        imageStore(outIndices, position, v2);
+        imageStore(outIndices, candidatePosition, v1);
+    }
+}
