@@ -1,26 +1,29 @@
 #version 430 core
 
 // Actual values set at compile time
+#define D 1337
 #define MASK_SIZE 1337
 #define PIXEL_COUNT MASK_SIZE * MASK_SIZE
 
+layout (local_size_x = 32, local_size_y = 1) in;
 
-layout (local_size_x = 1, local_size_y = 1) in;
-
-readonly layout (r32ui, binding=0) uniform uimage2D inIndices;
-writeonly layout (r32ui, binding=1) uniform uimage2D outIndices;
-//readonly layout (r32f, binding=2) uniform image2D distanceMatrix;
-
-uniform uint xorKey;
+readonly layout (rgba32ui, binding=0) uniform uimage2D inIndices;
+writeonly layout (rgba32ui, binding=1) uniform uimage2D outIndices;
+readonly layout(r32f, binding=2) uniform image2D inDisplay;
+writeonly layout(r32f, binding=3) uniform image2D outDisplay;
 
 
 layout (std430, binding=0) buffer SwapData {
-    uint permutations[];
+    uvec2 permutations[];
 };
 
 layout (std430, binding=1) buffer DistanceData {
-    float distanceMatrix[][PIXEL_COUNT];
+    float distanceMatrix[];
 };
+
+layout (binding=2) uniform atomic_uint swapCounter;
+
+uniform uint scramble;
 
 
 float circularSquaredDistance(ivec2 p, ivec2 q) {
@@ -34,17 +37,28 @@ ivec2 to2DIndex(uint index) {
     return ivec2(index % MASK_SIZE, index / MASK_SIZE);
 }
 
-float energyFunction(ivec2 center, uint candidateIndex, ivec2 p) {
+float energyFunction(ivec2 center, uint candidateID, ivec2 p) {
     const float sigma_i2 = 2.1f * 2.1f;
 
     float spatialDistance = - circularSquaredDistance(center, p) / sigma_i2;
-    float sampleDistance = - distanceMatrix[candidateIndex][imageLoad(inIndices, p).r];
 
-    return exp(spatialDistance + sampleDistance);
+    uint i = candidateID;
+    uint j = imageLoad(inIndices, p).z;
+
+    if(i > j) {
+        uint tmp = i;
+        i = j;
+        j = tmp;
+    }
+
+    // Map the (i, j) coordinates from the distance matrix to a 1D index in the vectorized upper triangular matrix
+    uint index = uint(j + i * PIXEL_COUNT - (i * (i + 1)) / 2);
+
+    return exp(spatialDistance) * distanceMatrix[index];
 }
 
 // Compute the energy around center with value as the center value
-float totalEnergy(ivec2 center, uint candidateIndex) {
+float totalEnergy(ivec2 center, uint candidateID) {
     const int radius = 5;
 
     float e = 0.f;
@@ -54,7 +68,7 @@ float totalEnergy(ivec2 center, uint candidateIndex) {
                 // Compute the position modulo the size of the mask
                 ivec2 position = (ivec2(i, j) + MASK_SIZE) % MASK_SIZE;
 
-                e += energyFunction(center, candidateIndex, position);
+                e += energyFunction(center, candidateID, position);
             }
         }
     }
@@ -62,25 +76,33 @@ float totalEnergy(ivec2 center, uint candidateIndex) {
     return e;
 }
 
+
 void main() {
-    uint index = gl_GlobalInvocationID.x * 2;
+    uint index = gl_GlobalInvocationID.x;
 
     // Compute the 2D positions from the 1D vectorized indices
-    ivec2 position = to2DIndex(permutations[index] ^ xorKey);
-    ivec2 candidatePosition = to2DIndex(permutations[index + 1] ^ xorKey);
+    ivec2 i = ivec2(permutations[index] ^ scramble);
+    ivec2 position = to2DIndex(i.x);
+    ivec2 candidatePosition = to2DIndex(i.y);
 
     // Pre fetch the candidate pixel index to avoid extra fetches 
-    uint centerIndex = imageLoad(inIndices, position).x;
-    uint candidateIndex = imageLoad(inIndices, candidatePosition).x;
+    uvec4 scrambles = imageLoad(inIndices, position);
+    uvec4 candidateScrambles = imageLoad(inIndices, candidatePosition);
 
-    float oldEnergy = totalEnergy(position, centerIndex) + totalEnergy(candidatePosition, candidateIndex);
-    float newEnergy = totalEnergy(position, candidateIndex) + totalEnergy(candidatePosition, centerIndex);
+    float oldEnergy = totalEnergy(position, scrambles.z) + totalEnergy(candidatePosition, candidateScrambles.z);
+    float newEnergy = totalEnergy(position, candidateScrambles.z) + totalEnergy(candidatePosition, scrambles.z);
 
-    if(newEnergy < oldEnergy) {
-        uvec4 v1 = imageLoad(inIndices, position);
-        uvec4 v2 = imageLoad(inIndices, candidatePosition);
+    if(newEnergy > oldEnergy) {
+        atomicCounterIncrement(swapCounter);
 
-        imageStore(outIndices, position, v2);
-        imageStore(outIndices, candidatePosition, v1);
+        imageStore(outIndices, position, candidateScrambles);
+        imageStore(outIndices, candidatePosition, scrambles);
+
+        // Swap result texture
+        vec4 display = imageLoad(inDisplay, position);
+        vec4 candidateDisplay = imageLoad(inDisplay, candidatePosition);
+
+        imageStore(outDisplay, position, candidateDisplay);
+        imageStore(outDisplay, candidatePosition, display);
     }
 }

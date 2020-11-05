@@ -6,59 +6,100 @@
 #include <utility>
 
 
+// Constants definition
+constexpr int D = 2 * 6;      // Must be a multiple of 2
+
+constexpr int MaskSize = 128; // Must be a power of two
+constexpr int PixelCount = MaskSize * MaskSize;
+constexpr int DistanceMatrixSize = PixelCount * (PixelCount + 1) / 2;
+
 class Optimizer {
 public:
-    Optimizer(GLuint maskSize, GLuint pixelDimension);
+    /// \brief Default constructor.
+    Optimizer(int spp);
 
-    void run() const {
-        glUseProgram(m_program);
-
-        glCopyImageSubData(m_indexTextures.second, GL_TEXTURE_2D, 0, 0, 0, 0, m_indexTextures.first, GL_TEXTURE_2D, 0,
-                           0, 0, 0, m_maskSize, m_maskSize, 1);
-
-        // Store the xor key location/maskSize²
-        std::uniform_int_distribution<uint> distribution(0, m_maskSize * m_maskSize - 1);
-        glUniform1ui(glGetUniformLocation(m_program, "xorKey"), distribution(m_generator));
-
-        glDispatchCompute(m_workGroupCount, 1, 1);
-        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-    }
-
-    GLuint indexTexture() const { return m_indexTextures.first; }
-
+    /// \brief Free the GL ressources before the destruction of the object.
+    /// \note This is required because otherwise the context will be destroyed before the ressources are freed.
     void freeGLRessources();
 
-    // Export the latest mask as PPM
-    void exportMaskAsPPM(const char *filename) const;
+    /// \brief Dispatch the compute shader.
+    void run() const;
 
-    // Export the latest mask as a header
+    /// \brief Starts the optimization of the next pair of dimensions.
+    /// \return False if all the dimensions have already been optimized.
+    bool nextDimensions();
+
+    /// \brief Query the number of permutations that was accepted in all the compute shader dispatches.
+    /// \return The number of permutations that was accepted in all the dispatches.
+    int acceptedSwapCount() const;
+
+    /// \brief Accessor for the display texture ID.
+    /// \return The display texture OpenGL ID.
+    GLuint displayTexture() const;
+
+    /// \brief Export the latest mask as a header.
+    /// \param filename The name of the file to export the mask in.
     void exportMaskAsHeader(const char *filename) const;
 
 private:
+    int m_dimension = 0;
+
     GLuint m_program;
-
-    GLuint m_permutationsSSBO;
-
-    mutable std::pair<GLuint, GLuint> m_indexTextures;
 
     GLuint m_distanceMatrixSSBO;
 
-    std::vector<GLfloat> m_whitenoise;
+    GLuint m_scramblesIn;
 
-    const GLuint m_workGroupCount;
+    GLuint m_scramblesOut;
 
-    const GLuint m_maskSize;
+    GLuint m_displayIn;
 
-    const GLuint m_pixelDimension;
+    GLuint m_displayOut;
 
     mutable std::mt19937 m_generator;
 
-    // Precompute the permutations that will be tested by the compute shader and store them in the SSBO
-    void precomputePermutations();
+    GLuint m_permutationsSSBO;
 
+    GLuint m_atomicCounter;
+
+    std::vector<GLuint> m_scrambles;
+
+    int m_spp;
+
+
+    //// Refactoring functions ////
+
+    /// \brief Generate the permutations that will be tested by the compute shader and store them in an SSBO.
+    void generatePermutationsSSBO();
+
+    /// \brief Generate the atomic coutner used to track the number of swaps in a single dispatch;
+    void generateAtomicCounter();
+
+    /// \brief Build the estimates matrix via calls to computeEstimatesMatrix and send it to the GPU.
     void setupTextures();
 
-    GLuint generateIndexTexture(const void *data);
+    /// \brief Generate an OpenGL RGBA32F 3D texture.
+    /// \param internal_format The OpenGL internal format of the texture.
+    /// \param format The OpenGL format of the texture.
+    /// \param data_type The type of the data stored in the texture.
+    /// \param image_unit The image unit to bind the texture to.
+    /// \param access The type of access that will be done on the texture (e.g. GL_WRITE_ONLY).
+    /// \param data The data to store in the texture shaped the way OpenGL expects it.
+    /// \return The OpenGL texture ID.
+    GLuint generateTexture(GLenum internal_format, GLenum format, GLenum data_type, int image_unit, GLenum access,
+                           const void *data) const;
 
-    GLuint generateDistanceMatrix();
+    /// \brief Generate the distance matrices and store them in an SSBO.
+    /// \param scrambles The scrambling values for all the dimensions.
+    void generateDistanceMatrix(GLuint *scrambles);
+
+    /// \brief Preintegrate a given function (in that case, a 2D gaussian) that will be displayed.
+    /// \param scrambling The scrambling values for all the dimensions.
+    /// \return An allocated array containing the result.
+    GLfloat *preintegrateDisplay(GLuint *scrambling) const;
+
+    /// \brief Integrate a 2D heaviside.
+    /// \param scramble The scramble values to use for each dimensions.
+    /// \param heaviside The 3 parameters that define an heaviside (i.e. an angle and a 2D point).
+    float integrateHeaviside(GLuint scramble[2], float heavisides[3]) const;
 };

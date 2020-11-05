@@ -1,12 +1,12 @@
 #include <display.hpp>
+#include <optimizer.hpp>
 
 #include <random>
 
 
-Display::Display(uint maskSize, uint pixelDimension, GLuint indexTexture)
+Display::Display(GLuint displayTexture)
     : m_program(buildShaders({PROJECT_ROOT "shaders/display.vert", PROJECT_ROOT "shaders/display.frag"},
-                             {GL_VERTEX_SHADER, GL_FRAGMENT_SHADER},
-                             {{"DIMENSION", pixelDimension}, {"MASK_SIZE", maskSize}})) {
+                             {GL_VERTEX_SHADER, GL_FRAGMENT_SHADER}, {})) {
     generateScreenquad();
 
     glDisable(GL_DEPTH_TEST);
@@ -15,14 +15,19 @@ Display::Display(uint maskSize, uint pixelDimension, GLuint indexTexture)
     glUseProgram(m_program);
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, indexTexture);
+    glBindTexture(GL_TEXTURE_2D, displayTexture);
 
-    glUniform1i(glGetUniformLocation(m_program, "indices"), 0);
+    glUniform1i(glGetUniformLocation(m_program, "display"), 0);
 }
 
 void Display::freeGLRessources() {
     glDeleteVertexArrays(1, &m_screenquadVAO);
     glDeleteProgram(m_program);
+}
+
+void Display::draw() const {
+    glUseProgram(m_program);
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_BYTE, nullptr);
 }
 
 void Display::generateScreenquad() {

@@ -2,20 +2,39 @@
 
 ## What is this ? 
 
-Hello there ! 
+Hello there ! This application implements the optimization process described in [A Low-Discrepancy Sampler that Distributes Monte Carlo Errors as a Blue Noise in Screen Space](https://belcour.github.io/blog/research/publication/2019/06/17/sampling-bluenoise.html), Heitz et al. (2019) on the GPU. 
+It produces 128 by 128 masks of 12 scramble values that can be used to scramble the owen sobol sequence provided in ```include/sobol_4096spp_256d.h```. A sampling function is provided with the optimized mask. 
 
-This application's purpose is to generate tileable bluenoise masks with up to 12 dimensions on the GPU to speed up the optimization process. The function minimized to produce those masks comes from the research paper *Blue-noise Dithered Sampling*, Iliyan Georgiev & Marcos Fajardo (2016, https://www.arnoldrenderer.com/research/dither_abstract.pdf). Note that the maximum dimension of the masks can trivially be increased but the quality achieved by this optimization in 12D is already limited.
+In case you want to optimize a mask for more or less than those 12 values, feel free to edit the constant ```D``` set in ```include/optimizer.hpp``` (just make sure it remains a multiple of two).
+
 
 ## Requirements
 
-The application has two simple requirements:
- - OpenGL 4.3 
- - CMake 3.2 
+The application has three requirements:
+ - OpenGL 4.3 for compute shaders
+ - OpenMP to speed up all the pre-computations
+ - CMake 3.2 for makefiles generation
 
-It uses GLFW to generate an OpenGL context. It is included in the repository as a submodule, so make sure you get it using *git submodule update --init* after cloning.
+It also uses [GLFW](https://github.com/glfw/glfw) to generate an OpenGL context and [GLAD](https://github.com/Dav1dde/glad) to load the OpenGL functions. 
+GLFW is included in the repository as a submodule, so make sure you get it using ```git submodule update --init``` after cloning the repository if you did not clone using the ```--recursive``` option in the first place.
+
 
 ## Usage
 
-On launch, the optimization process starts automatically and you get a feedback on the current state of your mask in the GLFW window. Note that, obviously, only the first 3 channels are displayed.
+On launch, the optimization process starts automatically and you get a feedback on the state of the optimization in the GLFW window (each sequence of the mask is used to integrate a gaussian, the normalized integration results are displayed). 
+As the permutations quickly get hard to visualize, the total number of permutations that were applied is constantly updated in the terminal.
 
-When the window is closed, the optimization stops and the last version of the mask is saved as a .ppm file at the root of the project (mask.ppm).
+The application expects either none or a two parameters. The first parameter is the sample count you want to optimize the mask for. As the sequence used for the optimization is an owen scrambled sobol sequence, it is strongly recommended to set that parameter with a value that is a power of two such that ```0 < n <= 4096```. The default value for the sample count is 16. 
+The second parameter is a threshold that must be strictly greather than zero, it is used to stop the optimization and its default value is 15. 
+
+The optimization is done by pairs of dimensions. The condition that must fulfilled to halt the optimization for a given pair of dimension is for the number of accepted permutations in a batch of 100 dispatches to be lower than the threshold (each compute shader dispatch attemps 4096 permutations). Note that the process can take several minutes (or even hours!) to complete depending on your GPU.
+The application will close when the 12 dimensions are optimized and the scrambling mask (and a sampling function) is exported at the root of the project in a header file (mask.h).
+
+
+## Sample result
+Here is the kind of result that can be obtained with the method described in that paper at 16 samples per pixel on the *Boxed* scene (rendered with [Mitsuba](http://www.mitsuba-renderer.org)):
+
+| Traditional whitenoise sampler                                                           | [Bluenoise sampler](https://belcour.github.io/blog/research/publication/2019/06/17/sampling-bluenoise.html) |
+| ---------------------------------------------------------------------------------------- |:-----------------------------------------------------------------------------------------------------------:|
+| <img src="https://i.imgur.com/GkNUQcz.png" alt="Boxed 16spp whitenoise"> | <img src="https://i.imgur.com/mOj1XTK.png" alt="Boxed 16spp bluenoise">                      |
+

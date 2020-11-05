@@ -1,5 +1,6 @@
 #include <chrono>
 #include <thread>
+#include <iomanip>
 
 #include <utils.hpp>
 #include <display.hpp>
@@ -9,29 +10,15 @@
 
 
 using std::chrono::duration_cast;
-using std::chrono::microseconds;
+using std::chrono::milliseconds;
 using std::chrono::steady_clock;
 
-const uint maskSize = 128;
-
-bool handleArgs(uint &pixelDimension, int argc, char **argv);
+bool handleArgs(int argc, char **argv, int &spp, int &threshold);
 
 int main(int argc, char **argv) {
-    uint pixelDimension;
-
-    if(!handleArgs(pixelDimension, argc, argv)) {
-        std::cerr << "[ERROR] Invalid arguments, possible usages:\n"
-                     "1) ./BluenoiseSequenceMaskOptimzer\n"
-                     "2) ./BluenoiseSequenceMaskOptimzer Dimension\n"
-                     "Note that Dimension maximum value is 12"
-                  << std::endl;
-
-        return INVALID_ARGUMENTS;
-    }
-
     // GLFW initialization
     if(!glfwInit()) {
-        std::cerr << "[ERROR] There was an issue during the initialization of GLFW" << std::endl;
+        ERROR << "There was an issue during the initialization of GLFW" << std::endl;
 
         return GLFW_INIT_ERROR;
     }
@@ -41,50 +28,89 @@ int main(int argc, char **argv) {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
 
-    GLFWwindow *window = glfwCreateWindow(maskSize, maskSize, "Bluenoise Mask Optimizer", nullptr, nullptr);
+    GLFWwindow *window = glfwCreateWindow(MaskSize, MaskSize, "Optimizer", nullptr, nullptr);
 
     if(!window) {
-        std::cerr << "[ERROR] There was an issue during the initialization of the GLFW window" << std::endl;
+        ERROR << "There was an issue during the initialization of the GLFW window" << std::endl;
 
         glfwTerminate();
         return GLFW_WINDOW_ERROR;
     }
 
     glfwMakeContextCurrent(window);
+    glfwSetWindowCloseCallback(window, [](GLFWwindow *window) { glfwSetWindowShouldClose(window, GLFW_FALSE); });
 
     // OpenGL initialization
     if(!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-        std::cerr << "[ERROR] There was an issue loading the OpenGL function: make sure your GPU is compatible with "
-                     "OpenGL 4.3."
-                  << std::endl;
+        ERROR << "There was an issue loading the OpenGL function: make sure your GPU is compatible with "
+                 "OpenGL 4.3."
+              << std::endl;
 
         glfwDestroyWindow(window);
         glfwTerminate();
         return GL_LOAD_ERROR;
     }
 
-    Optimizer optimizer(maskSize, pixelDimension);
-    Display display(maskSize, pixelDimension, optimizer.indexTexture());
+    // Check the GPU capabilities
+    GLint64 ssboMaxSize;
+    glGetInteger64v(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, &ssboMaxSize);
+    if(ssboMaxSize < int(sizeof(GLfloat)) * DistanceMatrixSize) {
+        ERROR << "Your OpenGL implementation only support SSBO of maximum size " << ssboMaxSize << ": aborting."
+              << std::endl;
 
+        return GL_SSBO_SIZE_ERROR;
+    }
+
+    int spp, threshold;
+    if(!handleArgs(argc, argv, spp, threshold)) {
+        ERROR << "Invalid arguments, possible usages :\n"
+                 "1) ./Optimizer\n"
+                 "2) ./Optimizer SampleCount Threshold\n"
+                 "Note: 1 <= SampleCount <= 4096 and 1 <= Threshold"
+              << std::endl;
+
+        return INVALID_ARGUMENTS;
+    }
+
+    Optimizer optimizer(spp);
+    Display display(optimizer.displayTexture());
+
+    int dispatchCount = 0;
+    int prevAcceptedSwaps = 0;
     auto start = steady_clock::now();
+
     while(!glfwWindowShouldClose(window)) {
         optimizer.run();
+        glFinish();
 
-        // 16,000 µs <=> maximum 60 fps
-        if(duration_cast<microseconds>(steady_clock::now() - start).count() > 16000) {
+        if(duration_cast<milliseconds>(steady_clock::now() - start).count() > 100) {
             display.draw();
+            LOG << "Accepted permutations: " << std::setw(6) << optimizer.acceptedSwapCount() << '\r' << std::flush;
 
             glfwSwapBuffers(window);
             glfwPollEvents();
 
             start = std::chrono::steady_clock::now();
         }
-        // Avoids window freezes
-        std::this_thread::sleep_for(microseconds(1));
+
+        // Check if the number of swaps for the current pair of dimension is below a threshold
+        if(++dispatchCount == 100) {
+            int acceptedSwaps = optimizer.acceptedSwapCount();
+
+            if(acceptedSwaps - prevAcceptedSwaps < threshold) {
+                LOG << "\n\n";
+                if(!optimizer.nextDimensions())
+                    glfwSetWindowShouldClose(window, true);
+            }
+
+            prevAcceptedSwaps = acceptedSwaps;
+            dispatchCount = 0;
+        }
     }
 
+    LOG << "Exporting the mask and cleaning up before exiting." << std::endl;
+
     // Save the last mask
-    optimizer.exportMaskAsPPM(PROJECT_ROOT "mask.ppm");
     optimizer.exportMaskAsHeader(PROJECT_ROOT "mask.h");
 
     // Cleanup
@@ -94,23 +120,29 @@ int main(int argc, char **argv) {
     glfwDestroyWindow(window);
     glfwTerminate();
 
-    return 0;
+    return SUCCESS;
 }
 
+bool handleArgs(int argc, char **argv, int &spp, int &threshold) {
+    if(argc == 1) {
+        spp = 16;
+        threshold = 15;
+    } else if(argc == 3) {
+        spp = std::atoi(argv[1]);
+        if(spp <= 0 || spp > 4096)
+            return false;
 
-bool handleArgs(uint &pixelDimension, int argc, char **argv) {
-    switch(argc) {
-    case 1:
-        pixelDimension = 3;
+        if(spp & (spp - 1))
+            WARN << "The sample per pixel argument should be a power of two for optimal convergence." << std::endl;
 
-        return true;
-
-    case 2:
-        pixelDimension = std::atoi(argv[1]);
-
-        return pixelDimension <= 12;
-
-    default:
+        threshold = std::atoi(argv[2]);
+        if(threshold <= 0) {
+            WARN << "The provided threshold should be greater than 0. Using default threshold value (threshold = 15)."
+                 << std::endl;
+            threshold = 15;
+        }
+    } else
         return false;
-    }
+
+    return true;
 }

@@ -8,10 +8,16 @@
 
 #include <glad/glad.h>
 
+#define SUCCESS 0
 #define INVALID_ARGUMENTS -1
 #define GLFW_INIT_ERROR -2
 #define GLFW_WINDOW_ERROR -3
 #define GL_LOAD_ERROR -4
+#define GL_SSBO_SIZE_ERROR -5
+
+#define LOG (std::cout << "[LOG]: ")
+#define WARN (std::cerr << "[WARN]: ")
+#define ERROR (std::cerr << "[ERROR]: ")
 
 #define AT "\n    --> at " << __FILE__ << " line " << __LINE__ << std::endl
 #define GL_CHECK_ERROR()                                                                                               \
@@ -88,7 +94,7 @@ inline GLuint buildShaders(const std::vector<std::string> &filenames, const std:
             src = std::regex_replace(src, expr, define.first + " " + std::to_string(define.second));
         }
 
-        GLint size = src.size();
+        GLint size = (GLint)src.size();
         const GLchar *const csrc = src.c_str();
 
         GLuint shader = glCreateShader(types[i]);

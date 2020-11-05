@@ -1,14 +1,13 @@
 #version 430 core
 
-#define MASK_SIZE 1337
 
-
-in vec2 textureCoordinates;
 out vec4 color;
 
-uniform usampler2D indices;
+uniform sampler2D display;
 
 
 void main() {
-    color = vec4(float(texture(indices, textureCoordinates).x) / (MASK_SIZE * MASK_SIZE - 1));
+    ivec2 coords = ivec2(gl_FragCoord.xy);
+    
+    color = vec4(texelFetch(display, coords, 0).x);
 }
