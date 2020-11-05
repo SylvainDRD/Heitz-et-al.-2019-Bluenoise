@@ -1,4 +1,4 @@
-# Bluenoise Mask Optimizer
+# Heitz et al. 2019
 
 ## What is this ? 
 
