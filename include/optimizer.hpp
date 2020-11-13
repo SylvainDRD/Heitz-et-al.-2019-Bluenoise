@@ -100,6 +100,6 @@ private:
 
     /// \brief Integrate a 2D heaviside.
     /// \param scramble The scramble values to use for each dimensions.
-    /// \param heaviside The 3 parameters that define an heaviside (i.e. an angle and a 2D point).
-    float integrateHeaviside(GLuint scramble[2], float heavisides[3]) const;
+    /// \param heaviside The 4 parameters that define an heaviside (i.e. an orientation vector and a 2D point).
+    float integrateHeaviside(GLuint scramble[2], float heavisides[4]) const;
 };
