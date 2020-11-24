@@ -238,10 +238,10 @@ void Optimizer::generateDistanceMatrix(GLuint *scrambles) {
     for(int i = 0; i < HeavisideCount; ++i) {
         float theta = 2 * PI * distribution(m_generator);
 
-        heavisides[3 * i] = std::cos(theta);
-        heavisides[3 * i + 1] = std::sin(theta);
-        heavisides[3 * i + 2] = distribution(m_generator);
-        heavisides[3 * i + 3] = distribution(m_generator);
+        heavisides[4 * i] = std::cos(theta);
+        heavisides[4 * i + 1] = std::sin(theta);
+        heavisides[4 * i + 2] = distribution(m_generator);
+        heavisides[4 * i + 3] = distribution(m_generator);
     }
 
     float *estimates = new float[PixelCount * HeavisideCount];
@@ -330,8 +330,8 @@ float Optimizer::integrateHeaviside(GLuint scramble[2], float heavisides[4]) con
     // Orientation vector
     float n[2] = {heavisides[0], heavisides[1]};
 
-    float x = heavisides[1];
-    float y = heavisides[2];
+    float x = heavisides[2];
+    float y = heavisides[3];
 
     float sum = 0.f;
     for(int k = 0; k < m_spp; ++k) {
