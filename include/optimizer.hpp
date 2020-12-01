@@ -7,7 +7,7 @@
 
 
 // Constants definition
-constexpr int D = 2 * 6;      // Must be a multiple of 2
+constexpr int D = 2 * 8; // Must be a multiple of 2
 
 constexpr int MaskSize = 128; // Must be a power of two
 constexpr int PixelCount = MaskSize * MaskSize;

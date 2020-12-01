@@ -86,11 +86,13 @@ void Optimizer::exportMaskAsHeader(const char *filename) const {
     std::ofstream file;
     file.open(filename);
 
+    std::uniform_int_distribution<uint32_t> distribution;
+
     file << "#pragma once\n\n";
     file << "#include \"sobol_4096spp_256d.h\"\n\n\n";
 
     // Dump the scrambling keys
-    file << "static const uint32_t scramblingKeys[" << MaskSize << "][" << MaskSize << "][" << D << "] = {\n";
+    file << "static const uint32_t scramblingKeys[" << MaskSize << "][" << MaskSize << "][" << 256 << "] = {\n";
     for(int i = 0; i < MaskSize; ++i) {
         file << "    {";
         for(int j = 0; j < MaskSize; ++j) {
@@ -100,7 +102,14 @@ void Optimizer::exportMaskAsHeader(const char *filename) const {
             for(int d = 0; d < D; ++d) {
                 file << m_scrambles[index + d] << 'U';
 
-                if(d != D - 1)
+                if(d != 255)
+                    file << ", ";
+            }
+
+            for(int d = D; d < 256; ++d) {
+                file << distribution(m_generator) << 'U';
+
+                if(d != 255)
                     file << ", ";
             }
             file << "}";
@@ -119,7 +128,7 @@ void Optimizer::exportMaskAsHeader(const char *filename) const {
     file << "float sample(int i, int j, int sampleID, int d) {\n";
     file << "    i = i & " << (MaskSize - 1) << ";\n";
     file << "    j = j & " << (MaskSize - 1) << ";\n\n";
-    file << "    uint32_t scramble = scramblingKeys[i][j][d % " << D << "];\n";
+    file << "    uint32_t scramble = scramblingKeys[i][j][d];\n";
     file << "    uint32_t sample = sequence[sampleID][d] ^ scramble;\n\n";
     file << "    return (sample + 0.5f) / " << (1ULL << 32) << "ULL;\n";
     file << "}\n\n";
@@ -268,7 +277,7 @@ void Optimizer::generateDistanceMatrix(GLuint *scrambles) {
                 GLfloat distance = squaredL2Norm(estimates + offset_i, estimates + offset_j, HeavisideCount);
 
                 GLuint index = j + i * PixelCount - i * (i + 1) / 2;
-                distanceMatrix[index] = distance;
+                distanceMatrix[index] = std::sqrt(distance);
             }
         }
     }
