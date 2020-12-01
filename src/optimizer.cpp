@@ -36,8 +36,8 @@ void Optimizer::freeGLRessources() {
 void Optimizer::run() const {
     glUseProgram(m_program);
 
-    std::uniform_int_distribution<uint> distribution(0, PixelCount - 1);
-    glUniform1ui(glGetUniformLocation(m_program, "scramble"), distribution(m_generator));
+    std::uniform_int_distribution<uint> distribution(0, MaskSize - 1);
+    glUniform2i(glGetUniformLocation(m_program, "scramble"), distribution(m_generator), distribution(m_generator));
     glDispatchCompute(WorkGroupCount, 1, 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_UPDATE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
 
