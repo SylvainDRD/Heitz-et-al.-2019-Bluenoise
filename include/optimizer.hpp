@@ -31,7 +31,7 @@ public:
 
     /// \brief Query the number of permutations that was accepted in all the compute shader dispatches.
     /// \return The number of permutations that was accepted in all the dispatches.
-    int acceptedSwapCount() const;
+    uint32_t acceptedSwapCount() const;
 
     /// \brief Accessor for the display texture ID.
     /// \return The display texture OpenGL ID.
@@ -95,8 +95,8 @@ private:
 
     /// \brief Preintegrate a given function (in that case, a 2D gaussian) that will be displayed.
     /// \param scrambling The scrambling values for all the dimensions.
-    /// \return An allocated array containing the result.
-    GLfloat *preintegrateDisplay(GLuint *scrambling) const;
+    /// \return A vector containing the result.
+    std::vector<GLfloat> preintegrateDisplay(GLuint *scrambling) const;
 
     /// \brief Integrate a 2D heaviside.
     /// \param scramble The scramble values to use for each dimensions.

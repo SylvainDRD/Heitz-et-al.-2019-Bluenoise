@@ -49,15 +49,14 @@ void Optimizer::run() const {
 
 bool Optimizer::nextDimensions() {
     // Dump the scramble values in a buffer to export them later
-    GLuint *scrambles = new GLuint[4 * PixelCount];
+    std::vector<GLuint> scrambles(4 * PixelCount);
     glBindTexture(GL_TEXTURE_2D, m_scramblesIn);
-    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA_INTEGER, GL_UNSIGNED_INT, scrambles);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA_INTEGER, GL_UNSIGNED_INT, scrambles.data());
 
     for(int i = 0; i < PixelCount; ++i) {
         m_scrambles[i * D + m_dimension] = scrambles[4 * i];
         m_scrambles[i * D + m_dimension + 1] = scrambles[4 * i + 1];
     }
-    delete[] scrambles;
 
     m_dimension += 2;
     if(m_dimension < D) {
@@ -69,15 +68,15 @@ bool Optimizer::nextDimensions() {
     return false;
 }
 
-int Optimizer::acceptedSwapCount() const {
-    int swapCounter;
+uint32_t Optimizer::acceptedSwapCount() const {
+    GLuint swapCounter;
 
     glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, m_atomicCounter);
     GLuint *ptr = (GLuint *)glMapBufferRange(GL_ATOMIC_COUNTER_BUFFER, 0, sizeof(GLuint), GL_MAP_READ_BIT);
     swapCounter = *ptr;
     glUnmapBuffer(GL_ATOMIC_COUNTER_BUFFER);
 
-    return swapCounter;
+    return (uint32_t)swapCounter;
 }
 
 GLuint Optimizer::displayTexture() const { return m_displayIn; }
@@ -137,7 +136,7 @@ void Optimizer::exportMaskAsHeader(const char *filename) const {
 void Optimizer::generatePermutationsSSBO() {
     const uint permutationArraySize = PixelCount / SwapAttemptsDivisor;
 
-    GLuint *permutations = new GLuint[PixelCount];
+    std::vector<GLuint> permutations(PixelCount);
 
     for(uint i = 0; i < PixelCount; ++i)
         permutations[i] = i;
@@ -150,13 +149,11 @@ void Optimizer::generatePermutationsSSBO() {
 
     glGenBuffers(1, &m_permutationsSSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_permutationsSSBO);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(GLuint) * permutationArraySize, permutations, GL_STATIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(GLuint) * permutationArraySize, permutations.data(), GL_STATIC_DRAW);
 
     GLuint blockID = glGetProgramResourceIndex(m_program, GL_SHADER_STORAGE_BLOCK, "SwapData");
     glShaderStorageBlockBinding(m_program, blockID, 0);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_permutationsSSBO);
-
-    delete[] permutations;
 }
 
 void Optimizer::generateAtomicCounter() {
@@ -171,7 +168,7 @@ void Optimizer::generateAtomicCounter() {
 void Optimizer::setupTextures() {
     LOG << "Dimensions " << m_dimension + 1 << " and " << m_dimension + 2 << " out of " << D << ":\n";
     LOG << "Generating the scramble values... " << std::endl;
-    GLuint *scrambles = new GLuint[4 * PixelCount];
+    std::vector<GLuint> scrambles(4 * PixelCount);
 
     std::uniform_int_distribution<GLuint> distribution;
     for(int i = 0; i < PixelCount; ++i) {
@@ -182,31 +179,32 @@ void Optimizer::setupTextures() {
     }
 
     LOG << "Pre-integrating the heavisides and the display gaussian..." << std::endl;
-    generateDistanceMatrix(scrambles);
+    generateDistanceMatrix(scrambles.data());
 
-    GLfloat *result = preintegrateDisplay(scrambles);
+    std::vector<GLfloat> result = preintegrateDisplay(scrambles.data());
 
     // Create the textures if they were never created
     // Else just update their content
     if(m_dimension == 0) {
-        m_scramblesIn = generateTexture(GL_RGBA32UI, GL_RGBA_INTEGER, GL_UNSIGNED_INT, 0, GL_READ_ONLY, scrambles);
-        m_scramblesOut = generateTexture(GL_RGBA32UI, GL_RGBA_INTEGER, GL_UNSIGNED_INT, 1, GL_WRITE_ONLY, scrambles);
-        m_displayIn = generateTexture(GL_R32F, GL_RED, GL_FLOAT, 2, GL_READ_ONLY, result);
-        m_displayOut = generateTexture(GL_R32F, GL_RED, GL_FLOAT, 3, GL_WRITE_ONLY, result);
+        m_scramblesIn =
+            generateTexture(GL_RGBA32UI, GL_RGBA_INTEGER, GL_UNSIGNED_INT, 0, GL_READ_ONLY, scrambles.data());
+        m_scramblesOut =
+            generateTexture(GL_RGBA32UI, GL_RGBA_INTEGER, GL_UNSIGNED_INT, 1, GL_WRITE_ONLY, scrambles.data());
+        m_displayIn = generateTexture(GL_R32F, GL_RED, GL_FLOAT, 2, GL_READ_ONLY, result.data());
+        m_displayOut = generateTexture(GL_R32F, GL_RED, GL_FLOAT, 3, GL_WRITE_ONLY, result.data());
     } else {
         glBindTexture(GL_TEXTURE_2D, m_scramblesIn);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32UI, MaskSize, MaskSize, 0, GL_RGBA_INTEGER, GL_UNSIGNED_INT, scrambles);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32UI, MaskSize, MaskSize, 0, GL_RGBA_INTEGER, GL_UNSIGNED_INT,
+                     scrambles.data());
         glBindTexture(GL_TEXTURE_2D, m_scramblesOut);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32UI, MaskSize, MaskSize, 0, GL_RGBA_INTEGER, GL_UNSIGNED_INT, scrambles);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32UI, MaskSize, MaskSize, 0, GL_RGBA_INTEGER, GL_UNSIGNED_INT,
+                     scrambles.data());
 
         glBindTexture(GL_TEXTURE_2D, m_displayIn);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, MaskSize, MaskSize, 0, GL_RED, GL_FLOAT, result);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, MaskSize, MaskSize, 0, GL_RED, GL_FLOAT, result.data());
         glBindTexture(GL_TEXTURE_2D, m_displayOut);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, MaskSize, MaskSize, 0, GL_RED, GL_FLOAT, result);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, MaskSize, MaskSize, 0, GL_RED, GL_FLOAT, result.data());
     }
-
-    delete[] result;
-    delete[] scrambles;
 }
 
 GLuint Optimizer::generateTexture(GLenum internal_format, GLenum format, GLenum data_type, int image_unit,
@@ -241,7 +239,7 @@ void Optimizer::generateDistanceMatrix(GLuint *scrambles) {
     std::uniform_real_distribution<GLfloat> distribution;
 
     // A rotation vector + a point
-    float *heavisides = new float[4 * HeavisideCount];
+    std::vector<float> heavisides(4 * HeavisideCount);
 
     const float PI = 3.14159265359f;
     for(int i = 0; i < HeavisideCount; ++i) {
@@ -253,8 +251,8 @@ void Optimizer::generateDistanceMatrix(GLuint *scrambles) {
         heavisides[4 * i + 3] = distribution(m_generator);
     }
 
-    float *estimates = new float[PixelCount * HeavisideCount];
-    GLfloat *distanceMatrix = new GLfloat[DistanceMatrixSize];
+    std::vector<float> estimates(PixelCount * HeavisideCount);
+    std::vector<GLfloat> distanceMatrix(DistanceMatrixSize);
 
 #pragma omp parallel
     {
@@ -274,7 +272,8 @@ void Optimizer::generateDistanceMatrix(GLuint *scrambles) {
             for(int j = i; j < PixelCount; ++j) {
                 GLuint offset_i = i * HeavisideCount;
                 GLuint offset_j = j * HeavisideCount;
-                GLfloat distance = squaredL2Norm(estimates + offset_i, estimates + offset_j, HeavisideCount);
+                GLfloat distance =
+                    squaredL2Norm(estimates.data() + offset_i, estimates.data() + offset_j, HeavisideCount);
 
                 GLuint index = j + i * PixelCount - i * (i + 1) / 2;
                 distanceMatrix[index] = std::sqrt(distance);
@@ -286,7 +285,8 @@ void Optimizer::generateDistanceMatrix(GLuint *scrambles) {
     if(m_dimension == 0) {
         glGenBuffers(1, &m_distanceMatrixSSBO);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_distanceMatrixSSBO);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(GLfloat) * DistanceMatrixSize, distanceMatrix, GL_STATIC_DRAW);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(GLfloat) * DistanceMatrixSize, distanceMatrix.data(),
+                     GL_STATIC_DRAW);
 
         GLuint blockID = glGetProgramResourceIndex(m_program, GL_SHADER_STORAGE_BLOCK, "DistanceData");
         glShaderStorageBlockBinding(m_program, blockID, 1);
@@ -295,18 +295,14 @@ void Optimizer::generateDistanceMatrix(GLuint *scrambles) {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_distanceMatrixSSBO);
 
         GLfloat *buffer = (GLfloat *)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_WRITE_ONLY);
-        std::memcpy(buffer, distanceMatrix, sizeof(GLfloat) * DistanceMatrixSize);
+        std::memcpy(buffer, distanceMatrix.data(), sizeof(GLfloat) * DistanceMatrixSize);
 
         glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
     }
-
-    delete[] heavisides;
-    delete[] estimates;
-    delete[] distanceMatrix;
 }
 
-GLfloat *Optimizer::preintegrateDisplay(GLuint *scrambling) const {
-    GLfloat *result = new GLfloat[PixelCount];
+std::vector<GLfloat> Optimizer::preintegrateDisplay(GLuint *scrambling) const {
+    std::vector<GLfloat> result(PixelCount);
 
     double variance = 0.0;
     double Div = 1.0 / (1ULL << 32);
@@ -319,22 +315,22 @@ GLfloat *Optimizer::preintegrateDisplay(GLuint *scrambling) const {
             sum += std::exp(-x * x - y * y);
         }
 
-        result[i] = sum / m_spp - 0.5577462854;
+        result[i] = float(sum / m_spp - 0.5577462854);
         variance += result[i] * result[i];
     }
     variance /= PixelCount;
-    double stddev = std::sqrt(variance);
+    float stddev = float(std::sqrt(variance));
 
     // Set the standard deviation to 1/4
     for(int i = 0; i < PixelCount; ++i)
-        result[i] = result[i] / (4 * stddev) + 0.5;
+        result[i] = result[i] / (4 * stddev) + 0.5f;
 
     return result;
 }
 
 float Optimizer::integrateHeaviside(GLuint scramble[2], float heavisides[4]) const {
-    const float SampleWeight = 1.f / m_spp;
-    const float Div = 1.f / (1ULL << 32);
+    const double SampleWeight = 1.f / m_spp;
+    const double Div = 1.f / (1ULL << 32);
 
     // Orientation vector
     float n[2] = {heavisides[0], heavisides[1]};
@@ -342,17 +338,17 @@ float Optimizer::integrateHeaviside(GLuint scramble[2], float heavisides[4]) con
     float x = heavisides[2];
     float y = heavisides[3];
 
-    float sum = 0.f;
+    double sum = 0.f;
     for(int k = 0; k < m_spp; ++k) {
-        float sample[2] = {((sequence[k][m_dimension] ^ scramble[0]) + 0.5f) * Div,
+        double sample[2] = {((sequence[k][m_dimension] ^ scramble[0]) + 0.5f) * Div,
                            ((sequence[k][m_dimension + 1] ^ scramble[1]) + 0.5f) * Div};
 
-        float v[2] = {sample[0] - x, sample[1] - y};
+        double v[2] = {sample[0] - x, sample[1] - y};
 
-        float eval = (v[0] * n[0] + v[1] * n[1] < 0.f ? 1.f : 0.f);
+        double eval = (v[0] * n[0] + v[1] * n[1] < 0.f ? 1.f : 0.f);
 
         sum += eval;
     }
 
-    return sum * SampleWeight;
+    return float(sum * SampleWeight);
 }
