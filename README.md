@@ -3,7 +3,10 @@
 ## What is this ? 
 
 Hello there ! This application implements the optimization process described in [A Low-Discrepancy Sampler that Distributes Monte Carlo Errors as a Blue Noise in Screen Space](https://belcour.github.io/blog/research/publication/2019/06/17/sampling-bluenoise.html), Heitz et al. (2019) on the GPU (minus the ranking part that allows for progressive bluenoises). 
-It produces 128 by 128 masks of 16 optimized scramble values that can be used to scramble the owen sobol sequence provided in ```include/sobol_4096spp_256d.h```. A sampling function is provided with the optimized mask. Note that this function returns floats in [0, 1] (1 included). 
+It produces 128 by 128 masks of 16 optimized scramble values that can be used to scramble the owen sobol sequence provided in ```include/sobol_4096spp_256d.h```. 
+A sampling function is provided with the optimized mask. 
+Note that this function returns floats in [0, 1] (1 included because of rounding approximations). This might be an important detail if you're using this sample function in a PBRT sampler. 
+A Mitsuba v0.6 sampler is also provided at the root of the project (*ldbnsampler.cpp*), so that you only need to copy and paste it along with a mask.h header (resulting from the optimization) in Mitsuba samplers' folder (*src/samplers*). 
 
 In case you want to optimize a mask for more or less than those 16 values, feel free to edit the constant ```D``` set in ```include/optimizer.hpp``` (just make sure it remains a multiple of two).
 
