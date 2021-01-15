@@ -21,11 +21,11 @@ GLFW is included in the repository as a submodule, so make sure you get it using
 
 ## Build instructions
 
-# On Windows (with a Visual Studio):
+### On Windows (with a Visual Studio):
 
 On any version on VS that supports CMake, just open the project directory with the IDE it's really that simple (tested on VS 2019).
 
-# On Linux:
+### On Linux:
 
 After cloning the repository and its dependencies (see the *Requirements* section), simply do the following in terminal while at the root of the project:
 ```
