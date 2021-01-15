@@ -8,7 +8,7 @@
 
 // Constants definition
 constexpr int D = 2 * 8; // Must be a multiple of 2
-constexpr int TotalD = 256; // The total number of dimensions exported
+constexpr int TotalD = 64; // The total number of dimensions exported: must be a power of two
 
 constexpr int MaskSize = 128; // Must be a power of two
 constexpr int PixelCount = MaskSize * MaskSize;

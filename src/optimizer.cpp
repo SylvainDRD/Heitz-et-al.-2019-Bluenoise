@@ -126,7 +126,8 @@ void Optimizer::exportMaskAsHeader(const char *filename) const {
     // Dump the sampling function
     file << "float sample(int i, int j, int sampleID, int d) {\n";
     file << "    i = i & " << (MaskSize - 1) << ";\n";
-    file << "    j = j & " << (MaskSize - 1) << ";\n\n";
+    file << "    j = j & " << (MaskSize - 1) << ";\n";
+    file << "    d = d & " << TotalD - 1 << ";\n\n";
     file << "    uint32_t scramble = scramblingKeys[i][j][d];\n";
     file << "    uint32_t sample = sequence[sampleID][d] ^ scramble;\n\n";
     file << "    return (sample + 0.5f) / " << (1ULL << 32) << "ULL;\n";
