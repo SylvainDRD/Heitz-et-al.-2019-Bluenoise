@@ -37,7 +37,7 @@ void Optimizer::run() const {
     glUseProgram(m_program);
 
     std::uniform_int_distribution<uint> distribution(0, MaskSize - 1);
-    glUniform2i(glGetUniformLocation(m_program, "scramble"), distribution(m_generator), distribution(m_generator));
+    glUniform2i(glGetUniformLocation(m_program, "permutationScramble"), distribution(m_generator), distribution(m_generator));
     glDispatchCompute(WorkGroupCount, 1, 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_UPDATE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
 
@@ -101,14 +101,14 @@ void Optimizer::exportMaskAsHeader(const char *filename) const {
             for(int d = 0; d < D; ++d) {
                 file << m_scrambles[index + d] << 'U';
 
-                if(d != 255)
+                if(d != TotalD - 1)
                     file << ", ";
             }
 
-            for(int d = D; d < 256; ++d) {
+            for(int d = D; d < TotalD; ++d) {
                 file << distribution(m_generator) << 'U';
 
-                if(d != 255)
+                if(d != TotalD - 1)
                     file << ", ";
             }
             file << "}";
@@ -239,16 +239,16 @@ void Optimizer::generateDistanceMatrix(GLuint *scrambles) {
     std::uniform_real_distribution<GLfloat> distribution;
 
     // A rotation vector + a point
-    std::vector<float> heavisides(4 * HeavisideCount);
+    std::vector<Heaviside> heavisides(HeavisideCount);
 
     const float PI = 3.14159265359f;
     for(int i = 0; i < HeavisideCount; ++i) {
         float theta = 2 * PI * distribution(m_generator);
 
-        heavisides[4 * i] = std::cos(theta);
-        heavisides[4 * i + 1] = std::sin(theta);
-        heavisides[4 * i + 2] = distribution(m_generator);
-        heavisides[4 * i + 3] = distribution(m_generator);
+        heavisides[i].nx = std::cos(theta);
+        heavisides[i].ny = std::sin(theta);
+        heavisides[i].px = distribution(m_generator);
+        heavisides[i].py = distribution(m_generator);
     }
 
     std::vector<float> estimates(PixelCount * HeavisideCount);
@@ -262,7 +262,7 @@ void Optimizer::generateDistanceMatrix(GLuint *scrambles) {
 
             for(int j = 0; j < HeavisideCount; ++j) {
                 int index = i * HeavisideCount + j;
-                estimates[index] = integrateHeaviside(&scrambles[scrambleIndex], &heavisides[4 * j]);
+                estimates[index] = integrateHeaviside(&scrambles[scrambleIndex], heavisides[j]);
             }
         }
 
@@ -276,7 +276,8 @@ void Optimizer::generateDistanceMatrix(GLuint *scrambles) {
                     squaredL2Norm(estimates.data() + offset_i, estimates.data() + offset_j, HeavisideCount);
 
                 GLuint index = j + i * PixelCount - i * (i + 1) / 2;
-                distanceMatrix[index] = std::sqrt(distance);
+
+                distanceMatrix[index] = distance; 
             }
         }
     }
@@ -305,18 +306,18 @@ std::vector<GLfloat> Optimizer::preintegrateDisplay(GLuint *scrambling) const {
     std::vector<GLfloat> result(PixelCount);
 
     double variance = 0.0;
-    double Div = 1.0 / (1ULL << 32);
+    float Div = 1.f / (1ULL << 32);
     for(int i = 0; i < PixelCount; ++i) {
         double sum = 0.0;
 
         for(int j = 0; j < m_spp; ++j) {
-            float x = float(((sequence[j][m_dimension] ^ scrambling[4 * i]) + 0.5) * Div);
-            float y = float(((sequence[j][m_dimension + 1] ^ scrambling[4 * i + 1]) + 0.5) * Div);
+            float x = ((sequence[j][m_dimension] ^ scrambling[4 * i]) + 0.5f) * Div;
+            float y = ((sequence[j][m_dimension + 1] ^ scrambling[4 * i + 1]) + 0.5f) * Div;
             sum += std::exp(-x * x - y * y);
         }
 
         result[i] = float(sum / m_spp - 0.5577462854);
-        variance += result[i] * result[i];
+        variance += double(result[i] * result[i]);
     }
     variance /= PixelCount;
     float stddev = float(std::sqrt(variance));
@@ -328,24 +329,18 @@ std::vector<GLfloat> Optimizer::preintegrateDisplay(GLuint *scrambling) const {
     return result;
 }
 
-float Optimizer::integrateHeaviside(GLuint scramble[2], float heavisides[4]) const {
-    const double SampleWeight = 1.f / m_spp;
-    const double Div = 1.f / (1ULL << 32);
-
-    // Orientation vector
-    float n[2] = {heavisides[0], heavisides[1]};
-
-    float x = heavisides[2];
-    float y = heavisides[3];
+float Optimizer::integrateHeaviside(GLuint scramble[2], const Heaviside &heaviside) const {
+    const float SampleWeight = 1.f / m_spp;
+    const float Div = 1.f / (1ULL << 32);
 
     double sum = 0.f;
     for(int k = 0; k < m_spp; ++k) {
-        double sample[2] = {((sequence[k][m_dimension] ^ scramble[0]) + 0.5f) * Div,
-                           ((sequence[k][m_dimension + 1] ^ scramble[1]) + 0.5f) * Div};
+        double sample[2] = {((sequence[k][m_dimension] ^ scramble[0]) + 0.5) * Div,
+                            ((sequence[k][m_dimension + 1] ^ scramble[1]) + 0.5) * Div};
 
-        double v[2] = {sample[0] - x, sample[1] - y};
+        double v[2] = {sample[0] - heaviside.px, sample[1] - heaviside.py};
 
-        double eval = (v[0] * n[0] + v[1] * n[1] < 0.f ? 1.f : 0.f);
+        double eval = (v[0] * heaviside.nx + v[1] * heaviside.ny < 0.f ? 1.f : 0.f);
 
         sum += eval;
     }

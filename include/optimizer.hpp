@@ -8,6 +8,7 @@
 
 // Constants definition
 constexpr int D = 2 * 8; // Must be a multiple of 2
+constexpr int TotalD = 256; // The total number of dimensions exported
 
 constexpr int MaskSize = 128; // Must be a power of two
 constexpr int PixelCount = MaskSize * MaskSize;
@@ -69,6 +70,16 @@ private:
 
     //// Refactoring functions ////
 
+    struct Heaviside {
+        // Orientation vector
+        float nx;
+        float ny;
+
+        // 2D point
+        float px;
+        float py;
+    };
+
     /// \brief Generate the permutations that will be tested by the compute shader and store them in an SSBO.
     void generatePermutationsSSBO();
 
@@ -101,5 +112,5 @@ private:
     /// \brief Integrate a 2D heaviside.
     /// \param scramble The scramble values to use for each dimensions.
     /// \param heaviside The 4 parameters that define an heaviside (i.e. an orientation vector and a 2D point).
-    float integrateHeaviside(GLuint scramble[2], float heavisides[4]) const;
+    float integrateHeaviside(GLuint scramble[2], const Heaviside &heaviside) const;
 };

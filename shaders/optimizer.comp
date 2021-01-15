@@ -23,7 +23,7 @@ layout (std430, binding=1) buffer DistanceData {
 
 layout (binding=2) uniform atomic_uint swapCounter;
 
-uniform ivec2 scramble;
+uniform ivec2 permutationScramble;
 
 
 float circularSquaredDistance(ivec2 p, ivec2 q) {
@@ -37,7 +37,7 @@ ivec2 to2DIndex(uint index) {
     return ivec2(index % MASK_SIZE, index / MASK_SIZE);
 }
 
-float energyFunction(ivec2 center, uint candidateID, ivec2 p) {
+float energyPixels(ivec2 center, uint candidateID, ivec2 p) {
     const float sigma_i2 = 2.1f * 2.1f;
 
     float spatialDistance = - circularSquaredDistance(center, p) / sigma_i2;
@@ -58,22 +58,22 @@ float energyFunction(ivec2 center, uint candidateID, ivec2 p) {
 }
 
 // Compute the energy around center with value as the center value
-float totalEnergy(ivec2 center, uint candidateID) {
-    const int radius = 5;
+float energy(ivec2 center, uint candidateID) {
+    const int radius = 6;
 
-    float e = 0.f;
-    for(int i = center.x - radius + 1; i < center.x + radius; ++i) { 
-        for(int j = center.y - radius + 1; j < center.y + radius; ++j) {
+    float total = 0.f;
+    for(int i = center.x - radius; i <= center.x + radius; ++i) { 
+        for(int j = center.y - radius; j <= center.y + radius; ++j) {
             if(i != center.x || j != center.y) {
                 // Compute the position modulo the size of the mask
                 ivec2 position = (ivec2(i, j) + MASK_SIZE) % MASK_SIZE;
 
-                e += energyFunction(center, candidateID, position);
+                total += energyPixels(center, candidateID, position);
             }
         }
     }
 
-    return e;
+    return total;
 }
 
 
@@ -82,15 +82,15 @@ void main() {
 
     // Compute the 2D positions from the 1D vectorized indices
     ivec2 i = ivec2(permutations[index]);
-    ivec2 position = to2DIndex(i.x) ^ scramble;
-    ivec2 candidatePosition = to2DIndex(i.y) ^ scramble;
+    ivec2 position = to2DIndex(i.x) ^ permutationScramble;
+    ivec2 candidatePosition = to2DIndex(i.y) ^ permutationScramble;
 
     // Pre fetch the candidate pixel index to avoid extra fetches 
     uvec4 scrambles = imageLoad(inIndices, position);
     uvec4 candidateScrambles = imageLoad(inIndices, candidatePosition);
 
-    float oldEnergy = totalEnergy(position, scrambles.z) + totalEnergy(candidatePosition, candidateScrambles.z);
-    float newEnergy = totalEnergy(position, candidateScrambles.z) + totalEnergy(candidatePosition, scrambles.z);
+    float oldEnergy = energy(position, scrambles.z) + energy(candidatePosition, candidateScrambles.z);
+    float newEnergy = energy(position, candidateScrambles.z) + energy(candidatePosition, scrambles.z);
 
     if(newEnergy > oldEnergy) {
         atomicCounterIncrement(swapCounter);
