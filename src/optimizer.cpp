@@ -1,5 +1,11 @@
 #include <optimizer.hpp>
+
+// #define USE_SOBOL_SEQUENCE
+#if defined(USE_SOBOL_SEQUENCE)
 #include <sobol_4096spp_256d.h>
+#else
+#include <rank1_1024spp_10d.h>
+#endif
 
 #include <omp.h>
 
@@ -127,10 +133,36 @@ void Optimizer::exportMaskAsHeader(const char *filename) const {
     file << "float sample(int i, int j, int sampleID, int d) {\n";
     file << "    i = i & " << (MaskSize - 1) << ";\n";
     file << "    j = j & " << (MaskSize - 1) << ";\n\n";
+#if defined(USE_SOBOL_SEQUENCE)
     file << "    uint32_t scramble = scramblingKeys[i][j][d];\n";
     file << "    uint32_t sample = sequence[sampleID][d] ^ scramble;\n\n";
     file << "    return (sample + 0.5f) / " << (1ULL << 32) << "ULL;\n";
+#else
+    file << "    float scramble = float(double(scramblingKeys[i][j][d]) / double(" << (1ULL << 32) << "ULL));\n";
+    file << "    float sample = fmodf(sequence[sampleID][d] + scramble, 1.0f);\n\n";
+    file << "    return sample;\n";
+#endif
     file << "}\n\n";
+}
+
+void Optimizer::exportMaskAsTile(const char *filename) const {
+    std::ofstream file(filename);
+    file << MaskSize << std::endl;
+    file << m_spp << std::endl;
+    file << D << std::endl;
+
+    for(uint32_t j=0; j<MaskSize; ++j) {
+        for(uint32_t i=0; i<MaskSize; ++i) {
+            uint32_t index = D * (i * MaskSize + j);
+            for(uint32_t k=0; k<uint32_t(m_spp); ++k) {
+                for(uint32_t d=0; d<D; ++d) {
+                    float shift  = binary_to_float(m_scrambles[index + d]);
+                    float sample = fmodf(sequence[k][d] + shift, 1.0f);
+                    file << sample << std::endl;
+                }
+            }
+        }
+    }
 }
 
 void Optimizer::generatePermutationsSSBO() {
@@ -305,13 +337,20 @@ std::vector<GLfloat> Optimizer::preintegrateDisplay(GLuint *scrambling) const {
     std::vector<GLfloat> result(PixelCount);
 
     double variance = 0.0;
+#if defined(USE_SOBOL_SEQUENCE)
     double Div = 1.0 / (1ULL << 32);
+#endif
     for(int i = 0; i < PixelCount; ++i) {
         double sum = 0.0;
 
         for(int j = 0; j < m_spp; ++j) {
-            float x = float(((sequence[j][m_dimension] ^ scrambling[4 * i]) + 0.5) * Div);
+#if defined(USE_SOBOL_SEQUENCE)
+            float x = float(((sequence[j][m_dimension + 0] ^ scrambling[4 * i + 0]) + 0.5) * Div);
             float y = float(((sequence[j][m_dimension + 1] ^ scrambling[4 * i + 1]) + 0.5) * Div);
+#else
+            float x = fmodf(sequence[j][m_dimension + 0] + binary_to_float(scrambling[4 * i + 0]), 1.0f);
+            float y = fmodf(sequence[j][m_dimension + 1] + binary_to_float(scrambling[4 * i + 1]), 1.0f);
+#endif
             sum += std::exp(-x * x - y * y);
         }
 
@@ -330,7 +369,9 @@ std::vector<GLfloat> Optimizer::preintegrateDisplay(GLuint *scrambling) const {
 
 float Optimizer::integrateHeaviside(GLuint scramble[2], float heavisides[4]) const {
     const double SampleWeight = 1.f / m_spp;
+#if defined(USE_SOBOL_SEQUENCE)
     const double Div = 1.f / (1ULL << 32);
+#endif
 
     // Orientation vector
     float n[2] = {heavisides[0], heavisides[1]};
@@ -340,9 +381,13 @@ float Optimizer::integrateHeaviside(GLuint scramble[2], float heavisides[4]) con
 
     double sum = 0.f;
     for(int k = 0; k < m_spp; ++k) {
-        double sample[2] = {((sequence[k][m_dimension] ^ scramble[0]) + 0.5f) * Div,
-                           ((sequence[k][m_dimension + 1] ^ scramble[1]) + 0.5f) * Div};
-
+#if defined(USE_SOBOL_SEQUENCE)
+        double sample[2] = {((sequence[k][m_dimension + 0] ^ scramble[0]) + 0.5f) * Div,
+                            ((sequence[k][m_dimension + 1] ^ scramble[1]) + 0.5f) * Div};
+#else
+        double sample[2] = {( fmod(sequence[k][m_dimension + 0] + binary_to_float(scramble[0]), 1.0) ),
+                            ( fmod(sequence[k][m_dimension + 1] + binary_to_float(scramble[1]), 1.0) )};
+#endif
         double v[2] = {sample[0] - x, sample[1] - y};
 
         double eval = (v[0] * n[0] + v[1] * n[1] < 0.f ? 1.f : 0.f);

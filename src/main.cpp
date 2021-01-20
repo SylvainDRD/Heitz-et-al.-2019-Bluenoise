@@ -112,6 +112,7 @@ int main(int argc, char **argv) {
 
     // Save the last mask
     optimizer.exportMaskAsHeader(PROJECT_ROOT "mask.h");
+    optimizer.exportMaskAsTile(PROJECT_ROOT "tile.samples");
 
     // Cleanup
     display.freeGLRessources();
