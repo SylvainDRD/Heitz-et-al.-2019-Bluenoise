@@ -3,16 +3,7 @@
 #include <cstdint>
 #include <climits>
 
-/* Generate a floating point value from 'x'
-*/
-static inline
-float binary_to_float(uint32_t x)
-{
-	double r = double(x) / (1ull << (CHAR_BIT*sizeof(uint32_t)));
-	return float(r);
-}
-
-static const float sequence[1024][10] = {
+static const float rank1_sequence[1024][10] = {
 	{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 	{ 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5 },
 	{ 0.25, 0.25, 0.25, 0.75, 0.75, 0.25, 0.25, 0.25, 0.25, 0.75 },

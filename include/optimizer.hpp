@@ -13,10 +13,15 @@ constexpr int MaskSize = 128; // Must be a power of two
 constexpr int PixelCount = MaskSize * MaskSize;
 constexpr int DistanceMatrixSize = PixelCount * (PixelCount + 1) / 2;
 
+enum SamplerType {
+   OWEN,
+   RANK1,
+};
+
 class Optimizer {
 public:
     /// \brief Default constructor.
-    Optimizer(int spp);
+    Optimizer(int spp, SamplerType type=SamplerType::RANK1);
 
     /// \brief Free the GL ressources before the destruction of the object.
     /// \note This is required because otherwise the context will be destroyed before the ressources are freed.
@@ -70,6 +75,7 @@ private:
 
     int m_spp;
 
+    SamplerType m_type;
 
     //// Refactoring functions ////
 
